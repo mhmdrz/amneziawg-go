@@ -5,7 +5,9 @@ name: release
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+*'
+      # Fork release tags: upstream version + "-build" (e.g. v3.1.20260814-build),
+      # created by sync-fork.yml. Mirrored upstream tags are left untouched.
+      - 'v[0-9]+.[0-9]+.[0-9]+-build'
   # Manual release: pick the branch/commit to build in the "Use workflow from"
   # selector, enter the version to publish. The tag is created at that commit if
   # it does not already exist.

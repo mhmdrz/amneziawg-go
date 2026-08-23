@@ -64,18 +64,26 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
         run: |
-          # Newest upstream version tag (peeled), e.g. v3.1.20260814
-          latest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)"
+          # Newest upstream version tag, e.g. v3.1.20260814 (ignore our own
+          # *-build tags so we always compare against the upstream version).
+          latest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname \
+            | grep -v -- '-build$' | head -n1)"
           if [ -z "$latest" ]; then
             echo "No upstream version tags found; nothing to do."
             exit 0
           fi
           echo "Latest upstream tag: $latest"
 
-          if git ls-remote --exit-code --tags origin "refs/tags/${latest}" >/dev/null 2>&1; then
-            echo "Fork already has tag $latest; nothing to release."
+          # The fork keeps the upstream version and adds a -build suffix so its
+          # release tags never collide with the mirrored upstream tags.
+          buildtag="${latest}-build"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${buildtag}" >/dev/null 2>&1; then
+            echo "Fork already has $buildtag; nothing to release."
             exit 0
           fi
 
-          echo "Pushing new tag $latest to fork (this triggers release.yml)."
-          git push origin "refs/tags/${latest}"
+          # Tag the exact upstream-tagged commit so the build matches the source.
+          echo "Creating $buildtag at $latest and pushing (this triggers release.yml)."
+          git tag "$buildtag" "$latest"
+          git push origin "refs/tags/${buildtag}"
