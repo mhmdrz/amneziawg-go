@@ -83,7 +83,9 @@ jobs:
             exit 0
           fi
 
-          # Tag the exact upstream-tagged commit so the build matches the source.
-          echo "Creating $buildtag at $latest and pushing (this triggers release.yml)."
-          git tag "$buildtag" "$latest"
+          # Tag master HEAD (upstream code just merged in, plus this fork's CI
+          # workflows). The tag must point at a commit that contains the workflow
+          # files, otherwise the tag push would not trigger release.yml.
+          echo "Creating $buildtag at master ($(git rev-parse --short HEAD)) and pushing (this triggers release.yml)."
+          git tag "$buildtag" HEAD
           git push origin "refs/tags/${buildtag}"
