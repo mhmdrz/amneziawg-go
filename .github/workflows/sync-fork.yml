@@ -1,0 +1,81 @@
+name: sync-fork
+
+# Keeps this fork in sync with the upstream amnezia-vpn/amneziawg-go repo.
+# On a schedule it fast-forwards master to upstream, then pushes any new
+# upstream version tag to this fork. Pushing the tag (with a PAT) triggers the
+# `release.yml` workflow, which builds the Linux binaries and cuts a release.
+#
+# Requires a repository secret `SYNC_TOKEN`: a fine-grained/classic PAT with
+# `contents: write` (and `workflows: write` if upstream ever changes workflow
+# files). A tag pushed with the default GITHUB_TOKEN would NOT trigger
+# release.yml, which is why a PAT is used here.
+on:
+  schedule:
+    - cron: '0 6 * * *'   # daily at 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  UPSTREAM: https://github.com/amnezia-vpn/amneziawg-go.git
+  UPSTREAM_BRANCH: master
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream "$UPSTREAM"
+          git fetch upstream "$UPSTREAM_BRANCH" --tags
+
+      - name: Sync master with upstream
+        run: |
+          git checkout master
+          before="$(git rev-parse HEAD)"
+          # Prefer a clean fast-forward; fall back to a merge if histories diverged.
+          if git merge --ff-only "upstream/${UPSTREAM_BRANCH}"; then
+            echo "Fast-forwarded master."
+          else
+            echo "Cannot fast-forward; merging upstream/${UPSTREAM_BRANCH}."
+            git merge --no-edit "upstream/${UPSTREAM_BRANCH}"
+          fi
+          after="$(git rev-parse HEAD)"
+          if [ "$before" != "$after" ]; then
+            git push origin master
+            echo "master updated: $before -> $after"
+          else
+            echo "master already up to date."
+          fi
+
+      - name: Detect newest upstream tag and release it
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          # Newest upstream version tag (peeled), e.g. v3.1.20260814
+          latest="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)"
+          if [ -z "$latest" ]; then
+            echo "No upstream version tags found; nothing to do."
+            exit 0
+          fi
+          echo "Latest upstream tag: $latest"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${latest}" >/dev/null 2>&1; then
+            echo "Fork already has tag $latest; nothing to release."
+            exit 0
+          fi
+
+          echo "Pushing new tag $latest to fork (this triggers release.yml)."
+          git push origin "refs/tags/${latest}"
